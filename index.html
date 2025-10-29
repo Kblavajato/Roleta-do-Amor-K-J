@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Roleta do Amor — Duas Roletas com Foto</title>
+<style>
+:root{
+  --bg1:#fff0f6; --bg2:#ffe6f0; --accent:#ff5fa8; --dark:#3a0b2e;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;font-family:Inter,system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial;}
+body{
+  background:linear-gradient(180deg,var(--bg1),var(--bg2));
+  display:flex;align-items:center;justify-content:center;padding:18px;
+}
+.app{
+  width:100%;max-width:980px;background:rgba(255,255,255,0.6);backdrop-filter: blur(6px);
+  border-radius:18px;box-shadow:0 20px 50px rgba(200,80,140,0.12);padding:18px;display:flex;
+  flex-direction:column;align-items:center;gap:18px;
+}
+header{display:flex;align-items:center;gap:12px;width:100%;justify-content:space-between;}
+h1{margin:0;color:var(--dark);font-size:20px}
+.subtitle{color:#8a4666;font-size:13px;}
+
+.wheels-area{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:40px;
+  position:relative;
+}
+
+/* roletas */
+.wheel-wrap{
+  position:relative;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:12px;
+}
+canvas{border-radius:50%;background:transparent;}
+
+.side-pointer{
+  position:absolute;
+  top:50%;
+  right:-40px; /* um pouco para fora da roleta */
+  transform:translateY(-50%);
+  width:50px;
+  height:auto;
+  z-index:10;
+  pointer-events:none;
+}
+
+/* foto central ENTRE as roletas */
+.center-photo{
+  position:relative;
+  width:150px;height:150px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  overflow:hidden;border:6px solid rgba(255,255,255,0.9);
+  box-shadow:0 10px 30px rgba(214,51,132,0.18);
+  background:linear-gradient(180deg,#fff,#ffeef7);
+}
+.center-photo img{width:100%;height:100%;object-fit:cover;display:block}
+
+.controls{display:flex;gap:10px;align-items:center;margin-top:8px;justify-content:center;}
+.btn{background:var(--accent);color:white;padding:10px 16px;border-radius:12px;border:0;font-weight:700;cursor:pointer;box-shadow:0 10px 20px rgba(255,95,168,0.18)}
+.btn.secondary{background:#fff;border:2px solid #ffd6e6;color:var(--accent)}
+.toggle{display:flex;gap:8px;align-items:center;color:#6b2450}
+.result{margin-top:8px;color:var(--dark);font-weight:700;text-align:center;}
+
+.panel{
+  background:rgba(255,255,255,0.85);
+  padding:12px;
+  border-radius:12px;
+  display:flex;
+  flex-direction:column;
+  gap:8px;
+  width:100%;
+  max-width:600px;
+}
+.history-list{max-height:160px;overflow:auto;padding-right:8px;border:1px dashed #f7d7e6;}
+.history-item{padding:6px;color:#6b2450;border-bottom:1px dashed #f7d7e6;}
+.share-btn{display:inline-block;background:#25D366;color:white;padding:8px 12px;border-radius:10px;text-decoration:none;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>🎡 Roleta do Amor — Duas Roletas</h1>
+    <div class="subtitle">Corações & Valores • Partilhe no WhatsApp</div>
+  </header>
+
+  <div class="wheels-area">
+    <div class="wheel-wrap">
+      <canvas id="heartWheel" width="300" height="300"></canvas>
+      <img src="seta.png" class="side-pointer" alt="Seta">
+    </div>
+
+    <div class="center-photo" title="Nosso casal">
+      <img src="couple.png" alt="Nosso casal">
+    </div>
+
+    <div class="wheel-wrap">
+      <canvas id="valueWheel" width="300" height="300"></canvas>
+      <img src="seta.png" class="side-pointer" alt="Seta">
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn" id="spinBtn">Girar 💖</button>
+    <button class="btn secondary" id="resetBtn">Resetar</button>
+    <label class="toggle"><input type="checkbox" id="surpriseToggle"> Modo surpresa</label>
+  </div>
+
+  <div class="result" id="resultText">Clique em Girar para começar</div>
+
+  <div class="panel">
+    <h3>Histórico (últimos 8 resultados)</h3>
+    <div class="history-list" id="historyList"></div>
+    <a id="whatsappShare" class="share-btn" target="_blank" rel="noopener" style="display:none;">Compartilhar no WhatsApp</a>
+  </div>
+</div>
+
+<script>
+(() => {
+  const hearts = ["🩷","❤️","🧡","💛","💚","🩵","💙","💜","🖤","🩶","🤍","🤎"];
+  const values = Array.from({ length: 20 }, (_, i) => `R$${i + 1}`);
+
+  const heartCanvas = document.getElementById('heartWheel');
+  const heartCtx = heartCanvas.getContext('2d');
+  const valueCanvas = document.getElementById('valueWheel');
+  const valueCtx = valueCanvas.getContext('2d');
+  const spinBtn = document.getElementById('spinBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const resultText = document.getElementById('resultText');
+  const surpriseToggle = document.getElementById('surpriseToggle');
+  const historyList = document.getElementById('historyList');
+  const whatsappShare = document.getElementById('whatsappShare');
+
+  const radius = heartCanvas.width / 2 * 0.9;
+  let rotationHeart = 0, rotationValue = 0, spinning = false;
+
+  /* ---- Desenhar roleta ---- */
+  function drawWheel(ctx, items, rot, showValues = true) {
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.save();
+    ctx.translate(ctx.canvas.width / 2, ctx.canvas.height / 2);
+    ctx.rotate(rot);
+    const sliceAngle = 2 * Math.PI / items.length;
+    const colors = ['#ffb6c1', '#ff66b2', '#ffd6e6', '#ffc0d9', '#ffdce6'];
+
+    for (let i = 0; i < items.length; i++) {
+      const start = i * sliceAngle;
+      const end = start + sliceAngle;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, radius, start, end);
+      ctx.closePath();
+      ctx.fillStyle = colors[i % colors.length];
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.save();
+      const mid = start + sliceAngle / 2;
+      ctx.rotate(mid);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      if (items === hearts) {
+        ctx.font = `${Math.floor(radius * 0.18)}px serif`;
+        ctx.fillStyle = '#80003f';
+        ctx.fillText(items[i], radius * 0.55, 0);
+      } else {
+        ctx.font = `${Math.floor(radius * 0.14)}px sans-serif`;
+        ctx.fillStyle = '#4b0930';
+        if (!surpriseToggle.checked || rot !== 0 || spinning) {
+          ctx.fillText(items[i], radius * 0.55, 0);
+        }
+      }
+      ctx.restore();
+    }
+    ctx.restore();
+  }
+
+  /* ---- Histórico ---- */
+  function loadHistory() {
+    const raw = localStorage.getItem('roleta_history_v4');
+    return raw ? JSON.parse(raw) : [];
+  }
+  function saveHistoryArray(arr) {
+    localStorage.setItem('roleta_history_v4', JSON.stringify(arr));
+  }
+  function addToHistory(item) {
+    const arr = loadHistory();
+    arr.unshift(item);
+    if (arr.length > 8) arr.pop();
+    saveHistoryArray(arr);
+    renderHistory();
+  }
+  function renderHistory() {
+    const arr = loadHistory();
+    historyList.innerHTML = '';
+    if (arr.length === 0) {
+      historyList.innerHTML = '<div style="padding:6px;color:#7a3a57">Nenhum resultado ainda</div>';
+      return;
+    }
+    arr.forEach(r => {
+      const div = document.createElement('div');
+      div.className = 'history-item';
+      div.innerText = `${r.heart} — ${r.value} (${new Date(r.time).toLocaleString()})`;
+      historyList.appendChild(div);
+    });
+  }
+  renderHistory();
+
+  drawWheel(heartCtx, hearts, 0);
+  drawWheel(valueCtx, values, 0, !surpriseToggle.checked);
+
+  function easeOutCubic(t) { return 1 - Math.pow(1 - t, 3); }
+
+  /* ---- Girar roletas ---- */
+  function spinWheel() {
+    if (spinning) return;
+    spinning = true;
+    spinBtn.disabled = true;
+    resetBtn.disabled = true;
+    resultText.textContent = "Girando coração...";
+
+    // Reinicia rotação base para evitar lentidão acumulada
+    rotationHeart = 0;
+    rotationValue = 0;
+
+    const finalHeartIndex = Math.floor(Math.random() * hearts.length);
+    const finalValueIndex = Math.floor(Math.random() * values.length);
+
+    // Como a seta está na DIREITA, o ângulo alvo é 0 radianos
+    const sliceHeart = (2 * Math.PI) / hearts.length;
+    const sliceValue = (2 * Math.PI) / values.length;
+    const heartTarget = 5 * 2 * Math.PI - (finalHeartIndex * sliceHeart + sliceHeart / 2);
+    const valueTarget = 5 * 2 * Math.PI - (finalValueIndex * sliceValue + sliceValue / 2);
+
+    const t0 = performance.now();
+
+    function frameHeart(now) {
+      const elapsed = now - t0;
+      const t = Math.min(1, elapsed / 2000);
+      rotationHeart = heartTarget * easeOutCubic(t);
+      drawWheel(heartCtx, hearts, rotationHeart);
+      if (t < 1) requestAnimationFrame(frameHeart);
+      else spinValue(finalValueIndex, heartTarget, finalHeartIndex);
+    }
+    requestAnimationFrame(frameHeart);
+  }
+
+  function spinValue(finalValueIndex, heartTarget, finalHeartIndex) {
+    resultText.textContent = "Girando valor...";
+    const start = performance.now();
+    const sliceValue = (2 * Math.PI) / values.length;
+    const valueTarget = 5 * 2 * Math.PI - (finalValueIndex * sliceValue + sliceValue / 2);
+
+    function frameValue(now) {
+      const t = Math.min(1, (now - start) / 2000);
+      rotationValue = valueTarget * easeOutCubic(t);
+      drawWheel(valueCtx, values, rotationValue, true);
+      if (t < 1) requestAnimationFrame(frameValue);
+      else {
+        spinning = false;
+        spinBtn.disabled = false;
+        resetBtn.disabled = false;
+
+        const landed = {
+          heart: hearts[finalHeartIndex],
+          value: values[finalValueIndex],
+          time: Date.now()
+        };
+        addToHistory(landed);
+        resultText.innerHTML = `🎯 Resultado: <strong>${landed.heart} — ${landed.value}</strong>`;
+        whatsappShare.href = `https://wa.me/?text=🎡 Roleta do Amor — Resultado: ${landed.heart} ${landed.value} 💘`;
+        whatsappShare.style.display = 'inline-block';
+      }
+    }
+    requestAnimationFrame(frameValue);
+  }
+
+  spinBtn.addEventListener('click', spinWheel);
+  resetBtn.addEventListener('click', () => {
+    if (spinning) return;
+    rotationHeart = 0;
+    rotationValue = 0;
+    drawWheel(heartCtx, hearts, 0);
+    drawWheel(valueCtx, values, 0, !surpriseToggle.checked);
+    resultText.textContent = "Pronto para girar";
+    whatsappShare.style.display = 'none';
+  });
+  surpriseToggle.addEventListener('change', () => {
+    drawWheel(valueCtx, values, rotationValue, !surpriseToggle.checked);
+  });
+})();
+</script>
+
+</body>
+</html>
